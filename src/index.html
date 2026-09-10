@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; media-src blob: mediastream:;"
+  />
+  <title>Powerzoid Cam</title>
+  <link rel="stylesheet" href="styles/main.css" />
+</head>
+<body>
+  <header>
+    <h1>Powerzoid Cam</h1>
+    <p>Pantalla + webcam para tutoriales</p>
+  </header>
+
+  <main>
+    <section id="sourceSection">
+      <h2>Fuente de pantalla</h2>
+      <div class="row btn-group">
+        <button class="chip active" data-mode="fullscreen">Pantalla completa</button>
+        <button class="chip" data-mode="region">Región personalizada</button>
+      </div>
+      <div class="row btn-group" id="ratioPresets" hidden>
+        <button class="chip active" data-ratio="free">Libre</button>
+        <button class="chip" data-ratio="16:9">16:9</button>
+        <button class="chip" data-ratio="9:16">9:16 (Shorts)</button>
+        <button class="chip" data-ratio="1:1">1:1</button>
+      </div>
+    </section>
+
+    <section id="webcamSection">
+      <h2>Webcam</h2>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="webcamEnabled" /> Activar webcam</label>
+      </div>
+      <div class="row">
+        <select id="webcamDevice"></select>
+      </div>
+      <div class="row">
+        <span>Posición</span>
+        <div class="grid-4" style="flex:1">
+          <button class="chip" data-pos="tl">Sup. izq.</button>
+          <button class="chip" data-pos="tr">Sup. der.</button>
+          <button class="chip" data-pos="bl">Inf. izq.</button>
+          <button class="chip active" data-pos="br">Inf. der.</button>
+        </div>
+      </div>
+      <div class="row">
+        <span>Tamaño</span>
+        <input type="range" id="pipSize" min="15" max="45" value="28" />
+      </div>
+      <div class="row btn-group">
+        <button class="chip active" data-shape="rect">Rectángulo</button>
+        <button class="chip" data-shape="circle">Círculo</button>
+      </div>
+      <div class="row">
+        <button id="switchMainBtn" style="flex:1">Cambiar principal (pantalla ↔ webcam)</button>
+      </div>
+    </section>
+
+    <section id="micSection">
+      <h2>Micrófono</h2>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="micEnabled" checked /> Activar micrófono</label>
+      </div>
+      <div class="row">
+        <select id="micDevice"></select>
+      </div>
+    </section>
+
+    <section>
+      <h2>Vista previa</h2>
+      <div class="preview-wrap">
+        <canvas id="outputCanvas" width="1280" height="720"></canvas>
+      </div>
+    </section>
+
+    <section>
+      <div class="timer" id="timer">00:00</div>
+      <div class="transport">
+        <button class="primary" id="startBtn">Grabar</button>
+        <button id="pauseBtn" disabled>Pausar</button>
+        <button class="danger" id="stopBtn" disabled>Detener</button>
+      </div>
+      <p class="status" id="statusText"></p>
+    </section>
+  </main>
+
+  <video id="screenPreview" autoplay muted playsinline hidden></video>
+  <video id="webcamPreview" autoplay muted playsinline hidden></video>
+
+  <div id="regionModal" hidden>
+    <div class="region-stage" id="regionStage">
+      <video id="regionVideo" autoplay muted playsinline></video>
+      <div class="region-rect" id="regionRect">
+        <div class="handle nw"></div>
+        <div class="handle ne"></div>
+        <div class="handle sw"></div>
+        <div class="handle se"></div>
+      </div>
+    </div>
+    <div class="region-actions">
+      <button id="regionCancel">Cancelar</button>
+      <button class="primary" id="regionConfirm">Confirmar región</button>
+    </div>
+  </div>
+
+  <script src="compositor.js"></script>
+  <script src="recorder-engine.js"></script>
+  <script src="control.js"></script>
+</body>
+</html>
