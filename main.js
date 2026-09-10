@@ -14,6 +14,7 @@ function createMainWindow() {
     minWidth: 340,
     minHeight: 560,
     title: 'Powerzoid Cam',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     backgroundColor: '#1e1e2e',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

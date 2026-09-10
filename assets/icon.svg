@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8f72ff"/>
+      <stop offset="1" stop-color="#5b3fd6"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a3a52"/>
+      <stop offset="1" stop-color="#232336"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#bg)"/>
+
+  <!-- Monitor -->
+  <rect x="40" y="62" width="150" height="104" rx="12" fill="#f4f3fb"/>
+  <rect x="50" y="72" width="130" height="84" rx="6" fill="url(#glass)"/>
+  <rect x="96" y="166" width="38" height="14" rx="3" fill="#f4f3fb"/>
+  <rect x="82" y="180" width="66" height="10" rx="5" fill="#f4f3fb"/>
+
+  <!-- Rec dot + label inside screen -->
+  <circle cx="68" cy="90" r="6" fill="#ff5c78"/>
+  <rect x="80" y="85" width="34" height="10" rx="5" fill="#6f6f92"/>
+
+  <!-- Webcam PiP bubble -->
+  <circle cx="182" cy="150" r="42" fill="#f4f3fb" stroke="#5b3fd6" stroke-width="5"/>
+  <circle cx="182" cy="150" r="30" fill="url(#glass)"/>
+  <circle cx="182" cy="150" r="13" fill="#8f72ff"/>
+  <circle cx="177" cy="145" r="4.5" fill="#f4f3fb" opacity="0.8"/>
+
+  <!-- live dot on webcam bubble -->
+  <circle cx="212" cy="120" r="9" fill="#ff5c78" stroke="#f4f3fb" stroke-width="3"/>
+</svg>
