@@ -4,6 +4,12 @@ const els = {
   modeButtons: document.querySelectorAll('[data-mode]'),
   ratioPresets: $('ratioPresets'),
   ratioButtons: document.querySelectorAll('[data-ratio]'),
+  regionEditRow: $('regionEditRow'),
+  editRegionBtn: $('editRegionBtn'),
+  regionStatus: $('regionStatus'),
+  regionConfirmRow: $('regionConfirmRow'),
+  regionConfirmBtn: $('regionConfirmBtn'),
+  regionCancelBtn: $('regionCancelBtn'),
   webcamEnabled: $('webcamEnabled'),
   webcamDevice: $('webcamDevice'),
   posButtons: document.querySelectorAll('[data-pos]'),
@@ -20,18 +26,12 @@ const els = {
   statusText: $('statusText'),
   screenPreview: $('screenPreview'),
   webcamPreview: $('webcamPreview'),
-  regionModal: $('regionModal'),
-  regionVideo: $('regionVideo'),
-  regionStage: $('regionStage'),
-  regionRect: $('regionRect'),
-  regionConfirm: $('regionConfirm'),
-  regionCancel: $('regionCancel'),
 };
 
 const state = {
   mode: 'fullscreen', // 'fullscreen' | 'region'
   presetRatio: 'free', // 'free' | '16:9' | '9:16' | '1:1'
-  cropRect: null, // {x,y,w,h} en píxeles del stream de pantalla, o null = full frame
+  cropRect: null, // {x,y,w,h} en píxeles físicos de pantalla, o null = full frame
   mainSource: 'screen', // 'screen' | 'webcam'
   screenEnabled: true,
   webcamEnabled: false,
@@ -46,7 +46,6 @@ const state = {
   recording: false,
   paused: false,
   recorder: null,
-  renderInterval: null,
   timerInterval: null,
   elapsedMs: 0,
   timerStartedAt: 0,
@@ -54,57 +53,162 @@ const state = {
 
 const ctx = els.outputCanvas.getContext('2d');
 
+function stopStream(stream) {
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+}
+
+// ---------- Preferencias persistentes ----------
+
+const SETTINGS_KEY = 'powerzoid-settings-v1';
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      mode: state.mode,
+      presetRatio: state.presetRatio,
+      webcamEnabled: state.webcamEnabled,
+      webcamDeviceId: els.webcamDevice.value || null,
+      pipPosition: state.pipPosition,
+      pipSizeRatio: state.pipSizeRatio,
+      pipShape: state.pipShape,
+      micEnabled: state.micEnabled,
+      micDeviceId: els.micDevice.value || null,
+    }));
+  } catch {
+    // localStorage puede fallar (privado/deshabilitado); no es crítico.
+  }
+}
+
+function loadSettings() {
+  try {
+    return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+const saved = loadSettings();
+
 // ---------- Selección de modo / preset de proporción ----------
 
+function setActiveChip(buttons, matchFn) {
+  buttons.forEach((b) => b.classList.toggle('active', matchFn(b)));
+}
+
+function updateRegionStatus() {
+  if (state.mode === 'region' && state.cropRect) {
+    els.regionStatus.textContent = `${state.cropRect.w}×${state.cropRect.h}`;
+  } else {
+    els.regionStatus.textContent = '';
+  }
+}
+
+async function defineRegion() {
+  els.regionConfirmRow.hidden = false;
+  els.editRegionBtn.disabled = true;
+  const result = await window.powerzoid.selectRegion(state.presetRatio);
+  els.regionConfirmRow.hidden = true;
+  els.editRegionBtn.disabled = state.recording;
+
+  if (result) {
+    state.cropRect = result;
+    els.statusText.textContent = '';
+  } else if (!state.cropRect) {
+    els.statusText.textContent = 'Selección de región cancelada.';
+  }
+  updateRegionStatus();
+}
+
+els.regionConfirmBtn.addEventListener('click', () => window.powerzoid.requestRegionConfirm());
+els.regionCancelBtn.addEventListener('click', () => window.powerzoid.requestRegionCancel());
+
 els.modeButtons.forEach((btn) => {
-  btn.addEventListener('click', () => {
-    els.modeButtons.forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
+  btn.addEventListener('click', async () => {
+    setActiveChip(els.modeButtons, (b) => b === btn);
     state.mode = btn.dataset.mode;
     els.ratioPresets.hidden = state.mode !== 'region';
+    els.regionEditRow.hidden = state.mode !== 'region';
+    saveSettings();
+    if (state.mode === 'region') {
+      await defineRegion();
+    } else {
+      state.cropRect = null;
+    }
   });
 });
 
 els.ratioButtons.forEach((btn) => {
-  btn.addEventListener('click', () => {
-    els.ratioButtons.forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
+  btn.addEventListener('click', async () => {
+    setActiveChip(els.ratioButtons, (b) => b === btn);
     state.presetRatio = btn.dataset.ratio;
+    saveSettings();
+    if (state.mode === 'region') {
+      await defineRegion();
+    }
   });
 });
 
-function ratioValue() {
-  switch (state.presetRatio) {
-    case '16:9': return 16 / 9;
-    case '9:16': return 9 / 16;
-    case '1:1': return 1;
-    default: return null;
-  }
-}
+els.editRegionBtn.addEventListener('click', defineRegion);
 
 // ---------- Webcam / mic UI ----------
 
+async function startWebcamPreview() {
+  stopStream(state.webcamStream);
+  state.webcamStream = null;
+  try {
+    state.webcamStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: els.webcamDevice.value ? { exact: els.webcamDevice.value } : undefined },
+      audio: false,
+    });
+    els.webcamPreview.srcObject = state.webcamStream;
+    await els.webcamPreview.play().catch(() => {});
+    populateDevices();
+  } catch (err) {
+    els.statusText.textContent = 'No se pudo abrir la webcam.';
+    state.webcamEnabled = false;
+    els.webcamEnabled.checked = false;
+  }
+}
+
+function stopWebcamPreview() {
+  stopStream(state.webcamStream);
+  state.webcamStream = null;
+  els.webcamPreview.srcObject = null;
+}
+
 els.webcamEnabled.addEventListener('change', () => {
   state.webcamEnabled = els.webcamEnabled.checked;
+  saveSettings();
+  if (state.webcamEnabled) {
+    startWebcamPreview();
+  } else {
+    stopWebcamPreview();
+  }
+});
+
+els.webcamDevice.addEventListener('change', () => {
+  saveSettings();
+  if (state.webcamEnabled) startWebcamPreview();
 });
 
 els.posButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
-    els.posButtons.forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
+    setActiveChip(els.posButtons, (b) => b === btn);
     state.pipPosition = btn.dataset.pos;
+    saveSettings();
   });
 });
 
 els.pipSize.addEventListener('input', () => {
   state.pipSizeRatio = Number(els.pipSize.value) / 100;
+  saveSettings();
 });
 
 els.shapeButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
-    els.shapeButtons.forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
+    setActiveChip(els.shapeButtons, (b) => b === btn);
     state.pipShape = btn.dataset.shape;
+    saveSettings();
   });
 });
 
@@ -114,13 +218,16 @@ els.switchMainBtn.addEventListener('click', () => {
 
 els.micEnabled.addEventListener('change', () => {
   state.micEnabled = els.micEnabled.checked;
+  saveSettings();
 });
+
+els.micDevice.addEventListener('change', saveSettings);
 
 async function populateDevices() {
   const devices = await navigator.mediaDevices.enumerateDevices();
 
-  const fill = (select, kind, emptyLabel) => {
-    const previous = select.value;
+  const fill = (select, kind, emptyLabel, preferredId) => {
+    const previous = select.value || preferredId;
     select.innerHTML = '';
     const filtered = devices.filter((d) => d.kind === kind);
     if (filtered.length === 0) {
@@ -138,148 +245,68 @@ async function populateDevices() {
     if (filtered.some((d) => d.deviceId === previous)) select.value = previous;
   };
 
-  fill(els.webcamDevice, 'videoinput', 'Sin cámaras detectadas');
-  fill(els.micDevice, 'audioinput', 'Sin micrófonos detectados');
+  fill(els.webcamDevice, 'videoinput', 'Sin cámaras detectadas', saved.webcamDeviceId);
+  fill(els.micDevice, 'audioinput', 'Sin micrófonos detectados', saved.micDeviceId);
 }
 
 navigator.mediaDevices.addEventListener('devicechange', populateDevices);
-populateDevices();
 
-// ---------- Selección de región personalizada ----------
+// ---------- Aplicar preferencias guardadas ----------
 
-let dragState = null;
-
-function clamp(v, min, max) {
-  return Math.min(Math.max(v, min), max);
-}
-
-function initRegionRect() {
-  const stageW = els.regionVideo.clientWidth;
-  const stageH = els.regionVideo.clientHeight;
-  const ratio = ratioValue();
-
-  let w = stageW * 0.7;
-  let h = ratio ? w / ratio : stageH * 0.7;
-  if (h > stageH * 0.9) {
-    h = stageH * 0.9;
-    w = ratio ? h * ratio : w;
-  }
-
-  const rect = { x: (stageW - w) / 2, y: (stageH - h) / 2, w, h };
-  applyRegionRect(rect);
-}
-
-function applyRegionRect(rect) {
-  els.regionRect.style.left = `${rect.x}px`;
-  els.regionRect.style.top = `${rect.y}px`;
-  els.regionRect.style.width = `${rect.w}px`;
-  els.regionRect.style.height = `${rect.h}px`;
-}
-
-function currentRegionRect() {
-  return {
-    x: parseFloat(els.regionRect.style.left),
-    y: parseFloat(els.regionRect.style.top),
-    w: parseFloat(els.regionRect.style.width),
-    h: parseFloat(els.regionRect.style.height),
-  };
-}
-
-els.regionRect.addEventListener('pointerdown', (e) => {
-  const isHandle = e.target.classList.contains('handle');
-  const rect = currentRegionRect();
-  dragState = {
-    mode: isHandle ? e.target.className.match(/\b(nw|ne|sw|se)\b/)[0] : 'move',
-    startX: e.clientX,
-    startY: e.clientY,
-    rect,
-  };
-  e.preventDefault();
-  e.stopPropagation();
-});
-
-window.addEventListener('pointermove', (e) => {
-  if (!dragState || els.regionModal.hidden) return;
-
-  const stageW = els.regionVideo.clientWidth;
-  const stageH = els.regionVideo.clientHeight;
-  const dx = e.clientX - dragState.startX;
-  const dy = e.clientY - dragState.startY;
-  const ratio = ratioValue();
-  let { x, y, w, h } = dragState.rect;
-
-  if (dragState.mode === 'move') {
-    x = clamp(dragState.rect.x + dx, 0, stageW - w);
-    y = clamp(dragState.rect.y + dy, 0, stageH - h);
-  } else {
-    const anchorRight = dragState.mode.includes('w') ? dragState.rect.x + dragState.rect.w : dragState.rect.x;
-    const anchorBottom = dragState.mode.includes('n') ? dragState.rect.y + dragState.rect.h : dragState.rect.y;
-    const dir = { n: dragState.mode.includes('n') ? -1 : 1, w: dragState.mode.includes('w') ? -1 : 1 };
-
-    w = clamp(dragState.rect.w + dx * dir.w, 40, stageW);
-    if (ratio) {
-      h = w / ratio;
-    } else {
-      h = clamp(dragState.rect.h + dy * dir.n, 40, stageH);
+function applySavedSettings() {
+  if (saved.mode) {
+    const btn = [...els.modeButtons].find((b) => b.dataset.mode === saved.mode);
+    if (btn) {
+      setActiveChip(els.modeButtons, (b) => b === btn);
+      state.mode = saved.mode;
+      els.ratioPresets.hidden = state.mode !== 'region';
+      els.regionEditRow.hidden = state.mode !== 'region';
     }
-
-    x = dragState.mode.includes('w') ? anchorRight - w : dragState.rect.x;
-    y = dragState.mode.includes('n') ? anchorBottom - h : dragState.rect.y;
-
-    if (x < 0) { w += x; x = 0; }
-    if (y < 0) { h += y; y = 0; }
-    if (x + w > stageW) w = stageW - x;
-    if (y + h > stageH) h = stageH - y;
   }
-
-  applyRegionRect({ x, y, w, h });
-});
-
-window.addEventListener('pointerup', () => {
-  dragState = null;
-});
-
-function stopStream(stream) {
-  if (stream) stream.getTracks().forEach((t) => t.stop());
+  if (saved.presetRatio) {
+    const btn = [...els.ratioButtons].find((b) => b.dataset.ratio === saved.presetRatio);
+    if (btn) {
+      setActiveChip(els.ratioButtons, (b) => b === btn);
+      state.presetRatio = saved.presetRatio;
+    }
+  }
+  if (saved.pipPosition) {
+    const btn = [...els.posButtons].find((b) => b.dataset.pos === saved.pipPosition);
+    if (btn) {
+      setActiveChip(els.posButtons, (b) => b === btn);
+      state.pipPosition = saved.pipPosition;
+    }
+  }
+  if (saved.pipShape) {
+    const btn = [...els.shapeButtons].find((b) => b.dataset.shape === saved.pipShape);
+    if (btn) {
+      setActiveChip(els.shapeButtons, (b) => b === btn);
+      state.pipShape = saved.pipShape;
+    }
+  }
+  if (typeof saved.pipSizeRatio === 'number') {
+    state.pipSizeRatio = saved.pipSizeRatio;
+    els.pipSize.value = String(Math.round(saved.pipSizeRatio * 100));
+  }
+  if (typeof saved.micEnabled === 'boolean') {
+    state.micEnabled = saved.micEnabled;
+    els.micEnabled.checked = saved.micEnabled;
+  }
+  if (typeof saved.webcamEnabled === 'boolean') {
+    state.webcamEnabled = saved.webcamEnabled;
+    els.webcamEnabled.checked = saved.webcamEnabled;
+  }
 }
 
-function openRegionModal() {
-  return new Promise((resolve, reject) => {
-    els.regionModal.hidden = false;
-
-    const onReady = () => {
-      els.regionVideo.removeEventListener('loadedmetadata', onReady);
-      initRegionRect();
-    };
-    els.regionVideo.addEventListener('loadedmetadata', onReady);
-
-    const cleanup = () => {
-      els.regionModal.hidden = true;
-      els.regionConfirm.removeEventListener('click', onConfirm);
-      els.regionCancel.removeEventListener('click', onCancel);
-    };
-
-    const onConfirm = () => {
-      const cssRect = currentRegionRect();
-      const scale = els.regionVideo.videoWidth / els.regionVideo.clientWidth;
-      cleanup();
-      resolve({
-        x: Math.round(cssRect.x * scale),
-        y: Math.round(cssRect.y * scale),
-        w: Math.round(cssRect.w * scale),
-        h: Math.round(cssRect.h * scale),
-      });
-    };
-
-    const onCancel = () => {
-      cleanup();
-      reject(new Error('cancelled'));
-    };
-
-    els.regionConfirm.addEventListener('click', onConfirm);
-    els.regionCancel.addEventListener('click', onCancel);
-  });
-}
+applySavedSettings();
+populateDevices().then(() => {
+  // La webcam recién puede previsualizarse una vez el selector tiene sus
+  // opciones cargadas. La región personalizada, en cambio, no se reabre sola
+  // al iniciar la app (sería una ventana a pantalla completa sorpresiva) —
+  // queda pendiente de "Editar región" o se pide al darle a Grabar.
+  if (state.webcamEnabled) startWebcamPreview();
+  updateRegionStatus();
+});
 
 // ---------- Cronómetro ----------
 
@@ -311,12 +338,14 @@ function setControlsEnabled(recordingActive) {
   els.startBtn.disabled = recordingActive;
   els.pauseBtn.disabled = !recordingActive;
   els.stopBtn.disabled = !recordingActive;
-  [...els.modeButtons, ...els.ratioButtons, els.webcamDevice, els.micDevice].forEach((el) => {
+  [...els.modeButtons, ...els.ratioButtons, els.webcamDevice, els.micDevice, els.editRegionBtn].forEach((el) => {
     el.disabled = recordingActive;
   });
 }
 
-// Usamos setInterval en vez de requestAnimationFrame: rAF depende de que el
+// El loop de dibujo corre siempre (no solo mientras se graba), para que la
+// vista previa de la webcam se vea de inmediato al activarla. Usamos
+// setInterval en vez de requestAnimationFrame: rAF depende de que el
 // compositor esté presentando la ventana en pantalla, así que se detiene en
 // cuanto la ventana de control pierde el foco o queda tapada por la app que
 // se está grabando (el caso de uso normal de un tutorial). setInterval sigue
@@ -335,6 +364,9 @@ function renderLoop() {
   });
 }
 
+renderLoop();
+setInterval(renderLoop, 1000 / 30);
+
 els.startBtn.addEventListener('click', async () => {
   els.statusText.textContent = '';
   try {
@@ -345,34 +377,19 @@ els.startBtn.addEventListener('click', async () => {
   }
 
   els.screenPreview.srcObject = state.screenStream;
-  els.regionVideo.srcObject = state.screenStream;
   await els.screenPreview.play().catch(() => {});
 
-  state.cropRect = null;
-  if (state.mode === 'region') {
-    try {
-      state.cropRect = await openRegionModal();
-    } catch {
+  if (state.mode === 'region' && !state.cropRect) {
+    await defineRegion();
+    if (!state.cropRect) {
       stopStream(state.screenStream);
       state.screenStream = null;
-      els.statusText.textContent = 'Selección de región cancelada.';
       return;
     }
   }
 
-  if (state.webcamEnabled) {
-    try {
-      state.webcamStream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: els.webcamDevice.value ? { exact: els.webcamDevice.value } : undefined },
-        audio: false,
-      });
-      els.webcamPreview.srcObject = state.webcamStream;
-      await els.webcamPreview.play().catch(() => {});
-    } catch (err) {
-      els.statusText.textContent = 'No se pudo abrir la webcam, continuando sin ella.';
-      state.webcamEnabled = false;
-      els.webcamEnabled.checked = false;
-    }
+  if (state.webcamEnabled && !state.webcamStream) {
+    await startWebcamPreview();
   }
 
   if (state.micEnabled) {
@@ -385,15 +402,10 @@ els.startBtn.addEventListener('click', async () => {
     }
   }
 
-  populateDevices();
-
-  const outW = state.cropRect ? state.cropRect.w : els.screenPreview.videoWidth;
-  const outH = state.cropRect ? state.cropRect.h : els.screenPreview.videoHeight;
+  const outW = state.mode === 'region' && state.cropRect ? state.cropRect.w : els.screenPreview.videoWidth;
+  const outH = state.mode === 'region' && state.cropRect ? state.cropRect.h : els.screenPreview.videoHeight;
   els.outputCanvas.width = outW || 1280;
   els.outputCanvas.height = outH || 720;
-
-  renderLoop();
-  state.renderInterval = setInterval(renderLoop, 1000 / 30);
 
   const outputStream = els.outputCanvas.captureStream(30);
   if (state.micStream) {
@@ -432,17 +444,17 @@ els.stopBtn.addEventListener('click', async () => {
   els.pauseBtn.disabled = true;
   els.statusText.textContent = 'Guardando...';
 
-  clearInterval(state.renderInterval);
   stopTimer();
 
   const fullPath = await state.recorder.stop();
 
+  // La webcam sigue activa después de grabar: es una vista previa en vivo,
+  // no algo atado únicamente a la grabación.
   stopStream(state.screenStream);
-  stopStream(state.webcamStream);
   stopStream(state.micStream);
   state.screenStream = null;
-  state.webcamStream = null;
   state.micStream = null;
+  els.screenPreview.srcObject = null;
   state.recording = false;
   state.paused = false;
 

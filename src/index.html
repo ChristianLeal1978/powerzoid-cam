@@ -28,6 +28,14 @@
         <button class="chip" data-ratio="9:16">9:16 (Shorts)</button>
         <button class="chip" data-ratio="1:1">1:1</button>
       </div>
+      <div class="row" id="regionEditRow" hidden>
+        <button id="editRegionBtn" style="flex:1">Editar región en pantalla</button>
+        <span class="region-status" id="regionStatus"></span>
+      </div>
+      <div class="row" id="regionConfirmRow" hidden>
+        <button id="regionCancelBtn">Cancelar</button>
+        <button class="primary" id="regionConfirmBtn" style="flex:1">Confirmar región</button>
+      </div>
     </section>
 
     <section id="webcamSection">
@@ -90,22 +98,6 @@
 
   <video id="screenPreview" autoplay muted playsinline hidden></video>
   <video id="webcamPreview" autoplay muted playsinline hidden></video>
-
-  <div id="regionModal" hidden>
-    <div class="region-stage" id="regionStage">
-      <video id="regionVideo" autoplay muted playsinline></video>
-      <div class="region-rect" id="regionRect">
-        <div class="handle nw"></div>
-        <div class="handle ne"></div>
-        <div class="handle sw"></div>
-        <div class="handle se"></div>
-      </div>
-    </div>
-    <div class="region-actions">
-      <button id="regionCancel">Cancelar</button>
-      <button class="primary" id="regionConfirm">Confirmar región</button>
-    </div>
-  </div>
 
   <script src="compositor.js"></script>
   <script src="recorder-engine.js"></script>
